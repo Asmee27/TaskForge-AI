@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: synapseops-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-synapseops}
+      POSTGRES_USER: ${POSTGRES_USER:-synapseops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-synapseops}
+    ports:
+      - "${POSTGRES_HOST_PORT:-55516}:5432"
+    volumes:
+      - synapseops_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:8-alpine
+    container_name: synapseops-redis
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - synapseops_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: synapseops-backend
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      SYNAPSEOPS_DATABASE_URL: postgresql://${POSTGRES_USER:-synapseops}:${POSTGRES_PASSWORD:-synapseops}@postgres:5432/${POSTGRES_DB:-synapseops}
+      SYNAPSEOPS_REDIS_URL: redis://redis:6379/0
+      SYNAPSEOPS_FRONTEND_ORIGINS: ${SYNAPSEOPS_FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      SYNAPSEOPS_DB: ${SYNAPSEOPS_DB:-data/processed/novamart.db}
+      SYNAPSEOPS_ACTION_DB: ${SYNAPSEOPS_ACTION_DB:-data/processed/action_store.db}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${BACKEND_HOST_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8000}
+    container_name: synapseops-frontend
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  synapseops_postgres_data:
+  synapseops_redis_data:

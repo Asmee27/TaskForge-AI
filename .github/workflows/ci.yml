@@ -1,0 +1,50 @@
+name: SynapseOps CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      LLM_PROVIDER: groq
+      GROQ_API_KEY: ""
+      TAVILY_API_KEY: ""
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile backend
+        run: python -m compileall -q app scripts
+      - name: Start persistence services for tests
+        run: docker compose -f docker-compose.yml up -d --wait postgres redis
+      - name: Run deterministic backend tests
+        run: |
+          python scripts/test_currency_safety.py
+          python scripts/test_document_rag.py
+          python scripts/test_decision_intelligence.py
+          python scripts/test_critic_failure.py
+      - name: Run M13 evaluation
+        run: python scripts/m13_evaluation.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+      - name: Validate Compose configuration
+        run: docker compose -f docker-compose.yml config
+      - name: Build backend image
+        run: docker build -f Dockerfile -t synapseops-backend:ci .
+      - name: Build frontend image
+        run: docker build -f frontend/Dockerfile -t synapseops-frontend:ci frontend
+      - name: Stop persistence services
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
