@@ -66,6 +66,22 @@ def main():
         intelligence={"charts": charts, "policy_citations": []},
     )
     assert pdf.startswith(b"%PDF")
+
+    # Regression test for oversized content pagination (LayoutError prevention)
+    very_long_text = "\n".join([f"Line {i}: SYNAPSEOPS WORKFLOW RESULT - Paragraph testing defensive pagination with large content." for i in range(300)])
+    long_result = sample_result()
+    long_result["final_output"] = very_long_text
+    long_result["task_results"][0]["output"] = very_long_text
+    long_result["critic_report"]["summary"] = very_long_text
+
+    long_pdf = build_report_pdf(
+        result=long_result,
+        workspace=long_result["workspace"],
+        intelligence={"charts": charts, "policy_citations": [{"citation": "doc.pdf (page 1, chunk 1)", "text": very_long_text}]},
+    )
+    assert long_pdf.startswith(b"%PDF")
+    assert len(long_pdf) > 10000
+
     print("decision intelligence synthetic tests: passed")
 
 

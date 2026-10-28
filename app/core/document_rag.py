@@ -200,11 +200,15 @@ def get_document(*, workspace_id: str, document_id: str) -> dict[str, Any] | Non
     return _document_payload(dict(row)) if row else None
 
 
+RELEVANCE_THRESHOLD = 0.15
+
+
 def retrieve_passages(
     *,
     workspace_id: str,
     query: str,
     top_k: int = 5,
+    min_score: float = RELEVANCE_THRESHOLD,
 ) -> list[dict[str, Any]]:
     clean_query = (query or "").strip()
     if not clean_query:
@@ -238,18 +242,20 @@ def retrieve_passages(
             vector = json.loads(vector)
         score = _similarity(query_vector, vector or [])
         token_overlap = len(query_tokens.intersection(_tokens(item["text"])))
-        ranked.append(
-            {
-                "document_id": str(item["document_id"]),
-                "workspace_id": item["workspace_id"],
-                "filename": item["filename"],
-                "page": item["page_number"],
-                "chunk": item["chunk_index"],
-                "text": item["text"],
-                "score": round(score + min(token_overlap, 5) * 0.01, 6),
-                "citation": f"{item['filename']} (page {item['page_number']}, chunk {item['chunk_index']})",
-            }
-        )
+        total_score = round(score + min(token_overlap, 5) * 0.01, 6)
+        if total_score >= min_score:
+            ranked.append(
+                {
+                    "document_id": str(item["document_id"]),
+                    "workspace_id": item["workspace_id"],
+                    "filename": item["filename"],
+                    "page": item["page_number"],
+                    "chunk": item["chunk_index"],
+                    "text": item["text"],
+                    "score": total_score,
+                    "citation": f"{item['filename']} (page {item['page_number']}, chunk {item['chunk_index']})",
+                }
+            )
 
     ranked.sort(key=lambda item: item["score"], reverse=True)
     return ranked[:top_k]
@@ -260,12 +266,22 @@ def ask_documents(
     workspace_id: str,
     question: str,
     top_k: int = 5,
+    min_score: float = RELEVANCE_THRESHOLD,
 ) -> dict[str, Any]:
     passages = retrieve_passages(
         workspace_id=workspace_id,
         query=question,
         top_k=top_k,
+        min_score=min_score,
     )
+    if not passages:
+        return {
+            "workspace_id": workspace_id,
+            "question": question,
+            "answer": "No relevant workspace policy evidence found.",
+            "passages": [],
+            "citations": [],
+        }
     return {
         "workspace_id": workspace_id,
         "question": question,

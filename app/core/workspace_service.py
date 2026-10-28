@@ -349,7 +349,7 @@ def get_workspace_database_path(
             f"Workspace '{workspace_id}' was not found."
         )
 
-    path = Path(workspace["database_path"])
+    path = Path(str(workspace["database_path"]).replace("\\", "/"))
 
     if not path.exists():
         raise FileNotFoundError(

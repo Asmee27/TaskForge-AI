@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import time
+from typing import TypedDict
+
 from langgraph import graph
 from app.core.runtime_budget import current_budget
 from app.agents.critic_agent import (
@@ -9,8 +13,6 @@ from app.agents.critic_agent import (
 from app.agents.action_agent import (
     create_proposed_action_request,
 )
-import time
-from typing import TypedDict
 
 from langchain_core.messages import (
     HumanMessage,
